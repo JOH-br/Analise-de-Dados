@@ -50,7 +50,7 @@ def check_paths_and_files():
                     
                     CREATE TABLE IF NOT EXISTS category(
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        category TEXT NOT NULL);
+                        category TEXT NOT NULL UNIQUE);
 
                     CREATE TABLE IF NOT EXISTS buffer_history(
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,10 +137,9 @@ try:
 
             tk.Button(frame_view, text="Atualizar", command=self.carregar_dados).pack(pady=5)
 
-            self.carregar_dados()
+            self.inserir_categorias_padrao()
 
-
-            # --- Aba 1: Adicionar ---
+            # --- Aba 2: Adicionar ---
             frame_add = ttk.Frame(ttk_nb)
             ttk_nb.add(frame_add, text="Adicionar")
 
@@ -150,44 +149,77 @@ try:
 
             tk.Label(frame_add, text="Turno:").pack(pady=2)
             self.turn = tk.Label(frame_add, text=get_turno_atual(), 
-                                 relief="sunken", width=30, anchor="center")
+                                relief="sunken", width=30, anchor="center")
             self.turn.pack(pady=2)   
 
             tk.Label(frame_add, text="Type Position:").pack(pady=2)
-            self.type_position = tk.Entry(frame_add, width=30)
-            self.type_position.pack(pady=2)
+            self.type_position_var = tk.StringVar()
+            self.type_position_combo = ttk.Combobox(
+                frame_add,
+                width=28,
+                textvariable=self.type_position_var,
+                values=["Scuttler", "Pallet", "Gaiola", "Saca"],
+                state="readonly"
+            )
+            self.type_position_combo.pack(pady=2)
 
-            tk.Label(frame_add, text="Category ID:").pack(pady=2)
-            self.category_id = tk.Entry(frame_add, width=30)
-            self.category_id.pack(pady=2)
+            tk.Label(frame_add, text="Categoria:").pack(pady=2)
+
+            self.category_var = tk.StringVar()
+
+            self.category_combo = ttk.Combobox(
+                frame_add,
+                width=28,
+                textvariable=self.category_var,
+                state="readonly"
+            )
+            self.category_combo.pack(pady=2)
 
             tk.Label(frame_add, text="Insert By:").pack(pady=2)
             self.insert_by = tk.Entry(frame_add, width=30)
             self.insert_by.pack(pady=2)
             
             tk.Button(frame_add, text="Adicionar", 
-                      command=self.adicionar_registro).pack(side="left", expand=True, padx=10)
+                    command=self.adicionar_registro).pack(side="left", expand=True, padx=10)
             tk.Button(frame_add, text="Limpar", 
-                      command=self.limpar_campos).pack(side="right", expand=True, padx=10)
-              
+                    command=self.limpar_campos).pack(side="right", expand=True, padx=10)
+
+            self.carregar_categorias()
+            self.carregar_dados()
+  
         def limpar_campos(self):
             self.id_position.delete(0, tk.END)
-            self.type_position.delete(0, tk.END)
-            self.category_id.delete(0, tk.END)
             self.insert_by.delete(0, tk.END)
+
+            self.type_position_var.set("")
+            self.category_var.set("")
 
         def adicionar_registro(self):
             try:
+                nome_categoria = self.category_var.get()
+                tipo_posicao = self.type_position_var.get()
+
+                if not nome_categoria:
+                    tk_mb.showwarning("Aviso", "Selecione uma categoria")
+                    return
+
+                if not tipo_posicao:
+                    tk_mb.showwarning("Aviso", "Selecione o tipo de posição")
+                    return
+
+                category_id = self.category_map[nome_categoria]
+
                 cursor.execute("""
                     INSERT INTO buffer (id_position, turn, type_position, category_id, quantity, insert_by, status)
                     VALUES (?, ?, ?, ?, 1, ?, 'AGUARDANDO')
                 """, (
                     self.id_position.get(),
-                    self.turn.get(),
-                    self.type_position.get(),
-                    self.category_id.get(),
-                    self.insert_by.get(),
+                    self.turn.cget('text'),
+                    tipo_posicao,
+                    category_id,
+                    self.insert_by.get()
                 ))
+
                 conn.commit()
                 tk_mb.showinfo("Sucesso", "Registro adicionado com sucesso!")
                 self.limpar_campos()
@@ -208,6 +240,29 @@ try:
                     self.tree.insert("", "end", values=row)
             except Exception as e:
                 tk_mb.showerror("Erro", f"Erro ao carregar dados: {e}")
+
+        def carregar_categorias(self):
+            cursor.execute("SELECT id, category FROM category")
+            rows = cursor.fetchall()
+
+            self.category_map = {nome: id_ for id_, nome in rows}
+
+            self.category_combo["values"] = list(self.category_map.keys())
+
+        def inserir_categorias_padrao(self):
+            categorias = [
+                "Tratativa", "Liquidation", "STN", "Fora de Perfil",
+                "Quarentena", "LAM-02", "CTE", "Devolução 3PL",
+                "Devolução Azul", "SPP Pacotinho", "SPP Volumoso", "Inventario"
+            ]
+
+            for cat in categorias:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO category (category)
+                    VALUES (?)
+                """, (cat,))
+            
+            conn.commit()
 
         def on_closing(self):
             conn.commit()
